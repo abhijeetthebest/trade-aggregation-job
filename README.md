@@ -144,5 +144,3 @@ All trades with same key in same window → summed `totalVolume`.
 
 Apache 2.0
 ```
-
-Save this as `README.md` in your Flink job project/module root. It provides complete setup, usage, and troubleshooting for your trade aggregation job!
