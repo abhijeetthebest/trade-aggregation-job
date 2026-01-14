@@ -16,6 +16,8 @@ import org.apache.flink.streaming.api.windowing.assigners.TumblingProcessingTime
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.util.serialization.JSONKeyValueDeserializationSchema;
 
+import java.time.Duration;
+
 public class TradeAggregationJob {
 
     public static void main(String[] args) throws Exception {
@@ -25,7 +27,7 @@ public class TradeAggregationJob {
         String bootstrapServers = params.get("bootstrapServers", "localhost:9092");
         String inputTopic      = params.get("inputTopic", "trades-new");
         String outputTopic     = params.get("outputTopic", "trades-aggregated");
-        int windowSeconds      = params.getInt("windowMinutes", 20);
+        int windowMinutes      = params.getInt("windowMinutes", 20 );
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.getConfig().setGlobalJobParameters(params);
@@ -36,14 +38,16 @@ public class TradeAggregationJob {
         KafkaSource<String> source = KafkaSource.<String>builder()
                 .setBootstrapServers(bootstrapServers)
                 .setTopics(inputTopic)
-                .setGroupId("trade-flink-consumer-2")
+                .setGroupId("trade-flink-consumer-3")
                 .setStartingOffsets(OffsetsInitializer.latest())
                 .setValueOnlyDeserializer(new SimpleStringSchema())
                 .build();
 
         DataStream<String> raw = env.fromSource(
                 source,
-                WatermarkStrategy.noWatermarks(), // processing time windows
+                WatermarkStrategy
+                        .<String>forBoundedOutOfOrderness(Duration.ofMinutes(5))
+                        .withTimestampAssigner((event, timestamp) -> System.currentTimeMillis()), // processing time windows
                 "kafka-trades-source"
         );
         System.out.println("Flink received: " + raw);
@@ -53,7 +57,7 @@ public class TradeAggregationJob {
         // ---- Key by (groupId, price, direction) and aggregate volume over tumbling window ----
         DataStream<AggregatedTrade> aggregated = trades
                 .keyBy(t -> t.getGroupId() + "|" + t.getPrice() + "|" + t.getDirection())
-                .window(TumblingProcessingTimeWindows.of(Time.seconds(windowSeconds)))
+                .window(TumblingProcessingTimeWindows.of(Time.minutes(windowMinutes)))
                 .reduce(
                         // Reduce function: sum volume
                         (t1, t2) -> {
